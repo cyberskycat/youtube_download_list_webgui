@@ -1,0 +1,118 @@
+<html>
+
+<head>
+    <script src="/static/js/vue.js"></script>
+    <script src="/static/js/jquery-3.3.1.slim.min.js"></script>
+    <script src="/static/js/popper.min.js"></script>
+    <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css">
+    <script src="/static/bootstrap/js/bootstrap.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+</head>
+
+<body>
+    <div id="app">
+
+
+        <table class="table table-striped  table-bordered">
+            <thead>
+                <tr>
+                    <th>list name</th>
+                    <th>author</th>
+                    <th>url</th>
+                    <th>status</th>
+                    <th>action</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                <!-- <button type="button" class="btn btn-primary" v-on:click="alert(1)">add</button>
+                    <input type="text" style="  margin-left: 10px; " placeholder="youtube playlist"> -->
+                <div class="input-group" style=" margin-top: 10px; margin-bottom: 10px;">
+                    <input type="text" id="add_list_id" size="80" placeholder="youtube playlist">
+                    <span class="input-group-btn">
+                        <button class="btn btn-danger" type="button" v-on:click="addList">add</button>
+                    </span>
+                </div>
+                <tr v-for="item in ylist">
+                    <td>{{item.name}}</td>
+                    <td>{{item.uploader}}</td>
+                    <td id="'url_'+item.id" :data-url='item.url'>
+                       <a  target="_blank" rel="noopener noreferrer" :href="item.url">  {{item.url}} </a>
+                        </td>
+                    <td> {{item.status}} </td>
+                    <td>
+                        <button type="button" class="btn btn-primary" :data_id='item.id' :data_url='item.url' v-on:click="syncList">sync</button>
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-danger" :data_id='item.id' :data_url='item.url' v-on:click="delList">del</button>
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+
+    </div>
+</body>
+<script>
+    var app = new Vue({
+        el: '#app',
+        methods: {
+            loadList: function () {
+                axios.get('/lists').then(response => {
+                    // console.log(response.data);
+                    this.ylist = response.data;
+                })
+            },
+            syncList: function (event) {
+                var sync_id = event.target.getAttribute("data_id");
+                axios.get('/syncList', {
+                    params: {
+                        "id": sync_id
+                    }
+                }).then(response => {
+                    // console.log(response.data);
+                    this.loadList();
+                })
+                // alert(event.target);
+            },
+            addList: function(){
+                var list_url_text = document.getElementById("add_list_id").value;
+                if(list_url_text == "") {
+                    alert("list content is null");
+                    return;
+                }
+                
+                axios.get('/addlist', {
+                    params: {
+                        "listurl": list_url_text
+                    }
+                }).then(response => {
+                    document.getElementById("add_list_id").value="";
+                    this.loadList();
+                }) 
+            },
+            delList: function(event){
+                var r=confirm("confirm delete list");
+                if (r==true){
+                var sync_id = event.target.getAttribute("data_id");
+                axios.get('/removelist', {
+                    params: {
+                        "id": sync_id
+                    }
+                }).then(response => {
+                    this.loadList();
+                })
+            }
+            }
+        },
+        data: {
+            ylist: {}
+        },
+        mounted: function () {
+            this.loadList();
+            setInterval(this.loadList, 5000)
+        }
+    })
+</script>
+
+</html>
