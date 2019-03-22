@@ -6,8 +6,10 @@ from sanic.response import json
 import pickle
 import os
 import threading
+from  store import Store
 from hashlib import sha1
 import time, threading
+from worker import *
 class MyLogger(object):
     def debug(self, msg):
         print(msg)
@@ -40,7 +42,6 @@ ydl_opts = {
     'subtitleslangs':['en','zh-Hans','zh-Hant'],
     "postprocessors":[{"key":"FFmpegEmbedSubtitle"}]
 }
-
 def getPlayList(listUrl):
     video_url_list = []
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
@@ -61,91 +62,41 @@ def extract_info(url):
         info_dict = ydl.extract_info(url, download=False,process=False)
         return info_dict
 
-
-def download(url):
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-
-
-#youtebe_list.pickledb
-class Store:
-    def __init__(self,dbname):
-        if dbname is None or dbname == '':
-            raise Exception("dbName is null")
-        self.dbname = dbname
-        #youtube data
-        self.ydata={}
-        self.shared_resource_lock = threading.Lock()
-        self.get_store_data()
-
-    def get_store_data(self):
-        print(self.dbname)
-        if os.path.isfile(self.dbname):
-            with open(self.dbname,'rb') as f:
-                data = pickle.load(f)
-                self.ydata=data
-        return self.ydata
-
-    def save_store_data(self):
-        self.shared_resource_lock.acquire()
-        with open(self.dbname, 'wb') as f:
-            pickle.dump(self.ydata, f, pickle.HIGHEST_PROTOCOL)
-        self.shared_resource_lock.release()
-
-    def get(self):
-        return self.ydata
-
-    def getElement(self,id):
-        return self.ydata[id]
-
-    def add(self,url):
-        id=url2tid(url)
-        if id in self.ydata:
-            raise Exception("playlist already exists")
-        self.ydata[id]={"id":id,"url":url,"lastSyncData":"","status":""}
-        self.save_store_data()
-        return id
-
-    def remove(self,id):
-        if id not in self.ydata:
-            raise Exception("playlist not exists")
-        del self.ydata[id]
-        self.save_store_data()
-        return id
-
-    def setFileData(self,id,fieldName,filedValue):
-        print("id:",id)
-        if id in self.ydata:
-            setdata = self.ydata[id]
-            setdata[fieldName] = filedValue
-            self.save_store_data()
-        else:
-            raise Exception("id not exists")
-
 app = Sanic()
 app_store = Store("youtebe.db")
+#store runing thread
+thread_map = {}
 
-# thread function
-def download_thread_fun(id,url):
-    app_store.setFileData(id,"status","downloading") 
-    download(url)
-    app_store.setFileData(id,"status","finish") 
+def add_to_thread_map(thread_group_name,id,thread_entity):
+    thread_map[thread_group_name+"_"+id] = thread_entity
+
+def clear_thread(thread_group_name,id):
+    print("clear thread",thread_group_name+"_"+id)
+    del thread_map[thread_group_name+"_"+id]
+
+def thread_is_woring(thread_group_name,id):
+    return thread_group_name+"_"+id  in thread_map
+
+def stop_thread(thread_group_name,id):
+    t = thread_map[thread_group_name+"_"+id]
+    t._stop()
+
 
 #sync list info to db, if url is not a list ,will remove from db
-def sync_list_info(id,url):
+def sync_list_info(wid,url):
     list_info = extract_info(url)
-    print('ssssssssssssssssssssssss',list_info)
+    print("list_info",list_info)
     if list_info is None:
-        app_store.remove(id)
+        app_store.remove(wid)
         return
     
     if 'entries'  in  list_info and list_info["_type"] == "playlist":
-        app_store.setFileData(id, "name", list_info["title"])
-        app_store.setFileData(id, "uploader", list_info["uploader"])
+        app_store.setFileData(wid, "name", list_info["title"])
+        app_store.setFileData(wid, "uploader", list_info["uploader"])
         return
     else:
-        app_store.remove(id)
+        app_store.remove(wid)
+
 
 # get all video list from a list or channel
 @app.route('/videooflist',methods=["GET",])
@@ -158,6 +109,7 @@ async def videooflist(request):
 
 @app.route('/lists',methods=["GET",])
 async def  lists(request):
+    print(thread_map)
     return json(app_store.get())
 
 @app.route('/addlist',methods=["GET",])
@@ -167,8 +119,8 @@ async def addlist(request):
             return json({"code":-1,"message":"list formt invaild"})
     listurl = listurl.strip() 
     try:
-       id =  app_store.add(listurl)
-       t = threading.Thread(target=sync_list_info,args=(id,listurl,), name='syncListInfoThread')
+       wid =  app_store.add(listurl)
+       t = threading.Thread(target=sync_list_info,args=(wid,listurl,), name='syncListInfoThread')
        t.start()
  
     except Exception:
@@ -177,35 +129,45 @@ async def addlist(request):
 
 @app.route('/removelist',methods=["GET",])
 async def removelist(request):
-    id = request.args["id"][0]
+    wid = request.args["wid"][0]
     try:
-       id =  app_store.remove(id)
+       wid =  app_store.remove(wid)
     except Exception:
         return json({"code":-1})
     return json({"code":1})
 
+# download latest video from the youtubelist
 @app.route('/syncList',methods=["GET",])
-async def addlist(request):
-    id = request.args["id"][0]
-    # if app_store.getElement(id)["status"] == "downloading":
+async def syncList(request):
+    print(request.args)
+    wid = request.args["wid"][0]
+    print("syncList id",wid)
+    # if thread_is_woring("syncListThread",id):
     #     return json({"code":-1,"message":"list is syncing"})
 
-    if  app_store.getElement(id)["name"] is None :
-        threading.Thread(target=sync_list_info,args=(id,url,), name='syncListInfoThread')
-    url = app_store.getElement(id)["url"]
-    # ydl_opts["outtmpl"]="./"+app_store.getElement(id)["name"]+"/%(title)s-%(id)s.%(ext)s"
+    if  app_store.getElement(wid)["name"] is None :
+        threading.Thread(target=sync_list_info,args=(wid,url,), name='syncListInfoThread')
+    url = app_store.getElement(wid)["url"]
     ydl_opts["outtmpl"]="./video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s"
     try:
-        
-        t = threading.Thread(target=download_thread_fun,args=(id,url,), name='syncListThread')
-        t.start()
-        
+        # t = threading.Thread(target=download_thread_fun,args=(id,url), kwargs={"call_back_function":clear_thread}, name='syncListThread')
+        # add_to_thread_map("syncListThread",id,t) 
+        # t.start()
+        start_worker(wid,url,app_store)
     except Exception:
         return json({"code":-1})
     return json({"code":1})
 
-@app.route('/status',methods=["GET",])
+@app.route('/stopSyncList',methods=["GET",])
 async def status(request):
+    wid = request.args["wid"][0]
+    if wid not in app_store.get():
+        return json({"code":-1,"message":"id not exists"})
+
+    if thread_is_woring("syncListThread",id):
+        pass
+    else:
+        return json({"code":-1,"message":"task not start"})
     return json(app_store.get())
 
 app.static('/static', './static')
