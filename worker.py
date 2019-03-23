@@ -92,13 +92,18 @@ class workerManager():
         del self.worker_map[self.worker_group_name+"_"+wid]
 
     def worker_is_runing(self,wid):
-        return self.worker_group_name+"_"+wid  in self.worker_map
+        if self.worker_group_name+"_"+wid  in self.worker_map :
+            worker = self.get_worker(wid)
+            return worker.is_alive() == True
+        else:
+            return False
+        
 
     def stop_worker(self,wid):
         if not self.worker_is_runing(wid):
             self.app_store.setFileData(wid,"status","finish") 
             return
-            
+
         worker =self.worker_map[self.worker_group_name+"_"+wid]
         worker.stop()
         self.clear_worker(wid)
