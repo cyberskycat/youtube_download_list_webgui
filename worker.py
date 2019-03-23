@@ -29,7 +29,8 @@ ydl_opts = {
     'writesubtitles':'true',
     'writeautomaticsub':'true',
     'subtitleslangs':['en','zh-Hans','zh-Hant'],
-    "postprocessors":[{"key":"FFmpegEmbedSubtitle"}]
+    "postprocessors":[{"key":"FFmpegEmbedSubtitle"}],
+    "outtmpl":"./video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s"
 }
 
 def url2tid(url):
@@ -61,10 +62,53 @@ class downLoadWorker(multiprocessing.Process):
             ydl.download([self.url])
 
     def stop(self):
-        self.logger.info('Terminating Process ...')
-        self.terminate()
+        print('Terminating Process ... id',self.wid," start")
+        #self.terminate()
+        self.kill()
         self.join()
+        print('Terminating Process ... id',self.wid," finish")
+        self.app_store.setFileData(self.wid,"status","finish") 
 
-def start_worker(wid,url,app_store):
-    w = downLoadWorker(wid, url,app_store)
-    w.start()
+        
+
+
+class workerManager():
+    worker_map = {}
+    def __init__(self,worker_group_name):
+        self.worker_group_name =worker_group_name
+
+    def get_all_worker(self):
+        return self.worker_map
+
+    def get_worker(self,wid):
+        return self.worker_map[self.worker_group_name+"_"+wid]
+
+    def add_to_worker_map(self,wid,worker):
+        self.worker_map[self.worker_group_name+"_"+wid] = worker
+
+    def clear_worker(self,wid):
+        print("clear thread",self.worker_group_name+"_"+wid)
+        del self.worker_map[self.worker_group_name+"_"+wid]
+
+    def worker_is_runing(self,wid):
+        return self.worker_group_name+"_"+wid  in self.worker_map
+
+    def stop_worker(self,wid):
+        if not self.worker_is_runing(wid):
+            return
+        worker =self.worker_map[self.worker_group_name+"_"+wid]
+        worker.stop()
+        self.clear_worker(wid)
+    
+    def stop_all_worker(self):
+        print("ssssssssssssssssssssssssssssssssssssssstop worker start")
+        for (k,worker) in self.worker_map.items():
+            worker.stop()
+        print("ssssssssssssssssssssssssssssssssssssssstop worker finish")
+
+    def start_worker(self,wid,url,app_store):
+        if self.worker_is_runing(wid):
+            return
+        w = downLoadWorker(wid, url,app_store)
+        w.start()
+        self.add_to_worker_map(wid,w)

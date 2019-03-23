@@ -10,38 +10,9 @@ from  store import Store
 from hashlib import sha1
 import time, threading
 from worker import *
-class MyLogger(object):
-    def debug(self, msg):
-        print(msg)
-        # pass
+import atexit
+import traceback
 
-    def warning(self, msg):
-        print(msg)
-
-    def error(self, msg):
-        print(msg)
-
-def url2tid(url):
-    return sha1(url.encode()).hexdigest()
-
-def my_hook(d):
-    # print(d)
-    if d['status'] == 'finished':
-        print(d['filename'])
-
-
-ydl_opts = {
-    # 'format':'worstaudio',
-    'yesplaylist': 'true',
-    'logger': MyLogger(),
-    'progress_hooks': [my_hook],
-    'download_archive':"./download_history.txt",
-    'ignoreerrors':'true',
-    'writesubtitles':'true',
-    'writeautomaticsub':'true',
-    'subtitleslangs':['en','zh-Hans','zh-Hant'],
-    "postprocessors":[{"key":"FFmpegEmbedSubtitle"}]
-}
 def getPlayList(listUrl):
     video_url_list = []
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
@@ -63,24 +34,10 @@ def extract_info(url):
         return info_dict
 
 app = Sanic()
+# app.config.KEEP_ALIVE = False
 app_store = Store("youtebe.db")
-#store runing thread
-thread_map = {}
-
-def add_to_thread_map(thread_group_name,id,thread_entity):
-    thread_map[thread_group_name+"_"+id] = thread_entity
-
-def clear_thread(thread_group_name,id):
-    print("clear thread",thread_group_name+"_"+id)
-    del thread_map[thread_group_name+"_"+id]
-
-def thread_is_woring(thread_group_name,id):
-    return thread_group_name+"_"+id  in thread_map
-
-def stop_thread(thread_group_name,id):
-    t = thread_map[thread_group_name+"_"+id]
-    t._stop()
-
+wmanager = workerManager("download_worker")
+atexit.register(wmanager.stop_all_worker)
 
 #sync list info to db, if url is not a list ,will remove from db
 def sync_list_info(wid,url):
@@ -109,8 +66,10 @@ async def videooflist(request):
 
 @app.route('/lists',methods=["GET",])
 async def  lists(request):
-    print(thread_map)
     return json(app_store.get())
+@app.route('/worker_lists',methods=["GET",])
+async def  wlists(request):
+    return json(wmanager.get_all_worker().keys())
 
 @app.route('/addlist',methods=["GET",])
 async def addlist(request):
@@ -148,13 +107,12 @@ async def syncList(request):
     if  app_store.getElement(wid)["name"] is None :
         threading.Thread(target=sync_list_info,args=(wid,url,), name='syncListInfoThread')
     url = app_store.getElement(wid)["url"]
-    ydl_opts["outtmpl"]="./video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s"
     try:
-        # t = threading.Thread(target=download_thread_fun,args=(id,url), kwargs={"call_back_function":clear_thread}, name='syncListThread')
-        # add_to_thread_map("syncListThread",id,t) 
-        # t.start()
-        start_worker(wid,url,app_store)
-    except Exception:
+        wmanager.start_worker(wid,url,app_store)
+        print("wid:",wid," start finish")
+
+    except Exception :
+        traceback.print_exc()
         return json({"code":-1})
     return json({"code":1})
 
@@ -163,12 +121,8 @@ async def status(request):
     wid = request.args["wid"][0]
     if wid not in app_store.get():
         return json({"code":-1,"message":"id not exists"})
-
-    if thread_is_woring("syncListThread",id):
-        pass
-    else:
-        return json({"code":-1,"message":"task not start"})
-    return json(app_store.get())
+    wmanager.stop_worker(wid)
+    return json({"code":1})
 
 app.static('/static', './static')
 app.static('/', './static/index.html')
