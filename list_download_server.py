@@ -36,8 +36,7 @@ def extract_info(url):
 app = Sanic()
 # app.config.KEEP_ALIVE = False
 app_store = None  
-wmanager = workerManager("download_worker")
-atexit.register(wmanager.stop_all_worker)
+wmanager = None 
 
 #sync list info to db, if url is not a list ,will remove from db
 def sync_list_info(wid,url):
@@ -67,6 +66,8 @@ async def videooflist(request):
 @app.route('/lists',methods=["GET",])
 async def  lists(request):
     return json(app_store.get())
+
+
 @app.route('/worker_lists',methods=["GET",])
 async def  wlists(request):
     return json(wmanager.get_all_worker().keys())
@@ -108,12 +109,14 @@ async def syncList(request):
         threading.Thread(target=sync_list_info,args=(wid,url,), name='syncListInfoThread')
     url = app_store.getElement(wid)["url"]
     try:
+        app_store.setFileData(wid,"status","starting") 
         wmanager.start_worker(wid,url,app_store)
         print("wid:",wid," start finish")
 
     except Exception :
         traceback.print_exc()
         return json({"code":-1})
+
     return json({"code":1})
 
 @app.route('/stopSyncList',methods=["GET",])
@@ -126,12 +129,13 @@ async def status(request):
 
 app.static('/static', './static')
 app.static('/', './static/index.html')
-
+app.static('/favicon.ico', './static/favicon.ico')
 if __name__ == '__main__':
     multiprocessing.set_start_method('forkserver',force=True)
     multiprocessing.freeze_support()
     app_store = Store("youtebe.db")
-
+    wmanager = workerManager("download_worker",app_store)
+    atexit.register(wmanager.stop_all_worker)
     app.run(host='0.0.0.0', port=5888,workers=1)
 
 # extract_info("https://www.youtube.com/playlist?list=PLt9WLG-do1avfIbJV1_Izpsv8sMH9-oBq")

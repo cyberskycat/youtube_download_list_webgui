@@ -74,8 +74,9 @@ class downLoadWorker(multiprocessing.Process):
 
 class workerManager():
     worker_map = {}
-    def __init__(self,worker_group_name):
+    def __init__(self,worker_group_name,app_store):
         self.worker_group_name =worker_group_name
+        self.app_store = app_store
 
     def get_all_worker(self):
         return self.worker_map
@@ -95,16 +96,18 @@ class workerManager():
 
     def stop_worker(self,wid):
         if not self.worker_is_runing(wid):
+            self.app_store.setFileData(wid,"status","finish") 
             return
+            
         worker =self.worker_map[self.worker_group_name+"_"+wid]
         worker.stop()
         self.clear_worker(wid)
     
     def stop_all_worker(self):
-        print("ssssssssssssssssssssssssssssssssssssssstop worker start")
+        print("stop worker .............")
         for (k,worker) in self.worker_map.items():
             worker.stop()
-        print("ssssssssssssssssssssssssssssssssssssssstop worker finish")
+        print("stop worker finish ...............")
 
     def start_worker(self,wid,url,app_store):
         if self.worker_is_runing(wid):
