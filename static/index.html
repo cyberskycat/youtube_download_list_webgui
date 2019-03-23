@@ -41,7 +41,7 @@
                     </td>
                     <td width="15%"> {{item.status}} </td>
                     <td width="10%">
-                        <button v-if="item.status =='finish' " type="button" class="btn btn-primary"
+                        <button v-if="item.status =='finish' || item.status == '' " type="button" class="btn btn-primary"
                             :data_id='item.wid' :data_url='item.url' :data_status="item.status"
                             v-on:click="syncList">sync</button>
 
