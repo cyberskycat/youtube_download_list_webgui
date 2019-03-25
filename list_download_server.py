@@ -13,6 +13,8 @@ from worker import *
 import atexit
 import traceback
 import multiprocessing
+from video_type import VideoTypeEnum
+
 def getPlayList(listUrl):
     video_url_list = []
     with youtube_dl.YoutubeDL(ydl_opts) as ydl:
@@ -29,29 +31,32 @@ def getPlayList(listUrl):
     return video_url_list
 
 def extract_info(url):
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+    with youtube_dl.YoutubeDL({}) as ydl:
         info_dict = ydl.extract_info(url, download=False,process=False)
         return info_dict
 
 app = Sanic()
 # app.config.KEEP_ALIVE = False
 app_store = None  
+app_store_single = None  
 wmanager = None 
+wmanager_single = None 
 
 #sync list info to db, if url is not a list ,will remove from db
-def sync_list_info(wid,url):
+def sync_video_info(wid,url):
     list_info = extract_info(url)
     print("list_info",list_info)
     if list_info is None:
         app_store.remove(wid)
         return
-    
+
+    app_store.setFileData(wid, "name", list_info["title"])
+    app_store.setFileData(wid, "uploader", list_info["uploader"]) 
     if 'entries'  in  list_info and list_info["_type"] == "playlist":
-        app_store.setFileData(wid, "name", list_info["title"])
-        app_store.setFileData(wid, "uploader", list_info["uploader"])
+        app_store.setFileData(wid, "video_type","playlist" )  
         return
     else:
-        app_store.remove(wid)
+        app_store.setFileData(wid, "video_type","video" )  
 
 
 # get all video list from a list or channel
@@ -72,22 +77,22 @@ async def  lists(request):
 async def  wlists(request):
     return json(wmanager.get_all_worker().keys())
 
-@app.route('/addlist',methods=["GET",])
+@app.route('/addurl',methods=["GET",])
 async def addlist(request):
-    listurl = request.args["listurl"][0]
+    listurl = request.args["url"][0]
     if listurl is None or listurl.startswith("http://"):
             return json({"code":-1,"message":"list formt invaild"})
     listurl = listurl.strip() 
     try:
        wid =  app_store.add(listurl)
-       t = threading.Thread(target=sync_list_info,args=(wid,listurl,), name='syncListInfoThread')
+       t = threading.Thread(target=sync_video_info,args=(wid,listurl,), name='syncListInfoThread')
        t.start()
  
     except Exception:
         return json({"code":-1})
     return json({"code":1})
 
-@app.route('/removelist',methods=["GET",])
+@app.route('/remove',methods=["GET",])
 async def removelist(request):
     wid = request.args["wid"][0]
     try:
@@ -96,21 +101,25 @@ async def removelist(request):
         return json({"code":-1})
     return json({"code":1})
 
-# download latest video from the youtubelist
-@app.route('/syncList',methods=["GET",])
-async def syncList(request):
+def parser_download_type(download_type_str):
+    if download_type_str =="playlist":
+        return VideoTypeEnum.LIST_VIDEO
+    elif download_type_str == "video":
+        return VideoTypeEnum.SINGLE_VIDEO
+    else:
+        raise Exception("error download type")
+
+# download latest video ( list or single video) from the youtubelist
+@app.route('/download',methods=["GET",])
+async def download(request):
     print(request.args)
     wid = request.args["wid"][0]
-    print("syncList id",wid)
-    # if thread_is_woring("syncListThread",id):
-    #     return json({"code":-1,"message":"list is syncing"})
+    down_type = parser_download_type( request.args["down_type"][0])
 
-    if  app_store.getElement(wid)["name"] is None :
-        threading.Thread(target=sync_list_info,args=(wid,url,), name='syncListInfoThread')
+    print("download id",wid)
     url = app_store.getElement(wid)["url"]
     try:
-        app_store.setFileData(wid,"status","starting") 
-        wmanager.start_worker(wid,url,app_store)
+        wmanager.start_worker(wid,app_store,down_video_type=down_type)
         print("wid:",wid," start finish")
 
     except Exception :
@@ -119,8 +128,8 @@ async def syncList(request):
 
     return json({"code":1})
 
-@app.route('/stopSyncList',methods=["GET",])
-async def status(request):
+@app.route('/stopDownload',methods=["GET",])
+async def stopDownload(request):
     wid = request.args["wid"][0]
     if wid not in app_store.get():
         return json({"code":-1,"message":"id not exists"})
@@ -133,9 +142,7 @@ app.static('/favicon.ico', './static/favicon.ico')
 if __name__ == '__main__':
     multiprocessing.set_start_method('forkserver',force=True)
     multiprocessing.freeze_support()
-    app_store = Store("youtebe.db")
-    wmanager = workerManager("download_worker",app_store)
+    app_store = Store("youtube.db")
+    wmanager = workerManager("download__worker",app_store)
     atexit.register(wmanager.stop_all_worker)
     app.run(host='0.0.0.0', port=5888,workers=1)
-
-# extract_info("https://www.youtube.com/playlist?list=PLt9WLG-do1avfIbJV1_Izpsv8sMH9-oBq")

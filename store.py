@@ -36,6 +36,9 @@ class Store:
     def getElement(self,wid):
         return self.ydata[wid]
 
+    def getElementFieldValue(self,wid,fieldName):
+        return self.ydata[wid][fieldName]
+
     def add(self,url):
         wid=url2tid(url)
         if wid in self.ydata:

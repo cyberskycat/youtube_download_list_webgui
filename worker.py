@@ -2,7 +2,9 @@ import multiprocessing
 import youtube_dl
 from hashlib import sha1
 from time import sleep
+from video_type import VideoTypeEnum
 
+import copy
 class MyLogger(object):
     def debug(self, msg):
         print(msg)
@@ -19,7 +21,7 @@ def my_hook(d):
     if d['status'] == 'finished':
         print(d['filename'])
 
-ydl_opts = {
+global_ydl_opts = {
     # 'format':'worstaudio',
     'yesplaylist': 'true',
     'logger': MyLogger(),
@@ -37,14 +39,23 @@ def url2tid(url):
     return sha1(url.encode()).hexdigest()
 
 
-
 class downLoadWorker(multiprocessing.Process):
-    def __init__(self,wid,url,app_store):
+    def __init__(self,wid,url,app_store,download_video_type=VideoTypeEnum.LIST_VIDEO):
         super(downLoadWorker, self).__init__()
         self.wid = wid
         self.name = "download_worder_" + self.wid
         self.url = url
         self.app_store = app_store
+        self.down_video_type = download_video_type
+        self.ydl_opts = copy.deepcopy(global_ydl_opts)
+        self.set_ydl_opts_for_download_type()
+
+    def set_ydl_opts_for_download_type(self):
+        if self.down_video_type == VideoTypeEnum.SINGLE_VIDEO:
+            del self.ydl_opts["yesplaylist"]
+            self.ydl_opts["noplaylist"] = "true"
+            self.ydl_opts["outtmpl"] ="./video_data/single_video/%(title)s-%(id)s.%(ext)s"
+        
     
     def run(self):
         print("worker:",self.wid)
@@ -58,12 +69,11 @@ class downLoadWorker(multiprocessing.Process):
             pass
 
     def download(self):
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        with youtube_dl.YoutubeDL(self.ydl_opts) as ydl:
             ydl.download([self.url])
 
     def stop(self):
         print('Terminating Process ... id',self.wid," start")
-        #self.terminate()
         self.kill()
         self.join()
         print('Terminating Process ... id',self.wid," finish")
@@ -114,9 +124,11 @@ class workerManager():
             worker.stop()
         print("stop worker finish ...............")
 
-    def start_worker(self,wid,url,app_store):
+    def start_worker(self,wid,app_store,down_video_type=VideoTypeEnum.LIST_VIDEO):
+        self.app_store.setFileData(wid,"status","starting") 
+        download_url = self.app_store.getElementFieldValue(wid,"url")
         if self.worker_is_runing(wid):
             return
-        w = downLoadWorker(wid, url,app_store)
+        w = downLoadWorker(wid, download_url,app_store,down_video_type)
         w.start()
         self.add_to_worker_map(wid,w)
