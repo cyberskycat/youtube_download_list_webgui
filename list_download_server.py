@@ -14,6 +14,7 @@ import atexit
 import traceback
 import multiprocessing
 from video_type import VideoTypeEnum
+import argparse
 
 def getPlayList(listUrl):
     video_url_list = []
@@ -139,10 +140,26 @@ async def stopDownload(request):
 app.static('/static', './static')
 app.static('/', './static/index.html')
 app.static('/favicon.ico', './static/favicon.ico')
+
+def parse_args():
+    """
+    :return:进行参数的解析
+    """
+    description = "download a youtube playlist  or single video"                   
+    parser = argparse.ArgumentParser(description=description)       
+    parser.add_argument('--datadir',help ="the directory store video data and app data ,default is app work dir", default="./")                  
+    args = parser.parse_args()                                      
+    if not args.datadir.startswith("/"):
+        args.datadir = args.datadir+"/"
+        
+    return args
+
 if __name__ == '__main__':
+    config_args = parse_args()
+    print("datadir=",config_args.datadir)
     multiprocessing.set_start_method('forkserver',force=True)
     multiprocessing.freeze_support()
-    app_store = Store("youtube.db")
-    wmanager = workerManager("download__worker",app_store)
+    app_store = Store(config_args.datadir+"youtube.db")
+    wmanager = workerManager("download__worker",app_store,video_store_dir=config_args.datadir)
     atexit.register(wmanager.stop_all_worker)
     app.run(host='0.0.0.0', port=5888,workers=1)

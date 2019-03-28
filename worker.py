@@ -26,13 +26,13 @@ global_ydl_opts = {
     'yesplaylist': 'true',
     'logger': MyLogger(),
     'progress_hooks': [my_hook],
-    'download_archive':"./download_history.txt",
+    'download_archive':"download_history.txt",
     'ignoreerrors':'true',
     'writesubtitles':'true',
     'writeautomaticsub':'true',
     'subtitleslangs':['en','zh-Hans','zh-Hant'],
     "postprocessors":[{"key":"FFmpegEmbedSubtitle"}],
-    "outtmpl":"./video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s"
+    "outtmpl":"video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s"
 }
 
 def url2tid(url):
@@ -40,13 +40,14 @@ def url2tid(url):
 
 
 class downLoadWorker(multiprocessing.Process):
-    def __init__(self,wid,url,app_store,download_video_type=VideoTypeEnum.LIST_VIDEO):
+    def __init__(self,wid,url,app_store,download_video_type=VideoTypeEnum.LIST_VIDEO,video_store_dir="./"):
         super(downLoadWorker, self).__init__()
         self.wid = wid
         self.name = "download_worder_" + self.wid
         self.url = url
         self.app_store = app_store
         self.down_video_type = download_video_type
+        self.video_store_dir = video_store_dir
         self.ydl_opts = copy.deepcopy(global_ydl_opts)
         self.set_ydl_opts_for_download_type()
 
@@ -54,11 +55,15 @@ class downLoadWorker(multiprocessing.Process):
         if self.down_video_type == VideoTypeEnum.SINGLE_VIDEO:
             del self.ydl_opts["yesplaylist"]
             self.ydl_opts["noplaylist"] = "true"
-            self.ydl_opts["outtmpl"] ="./video_data/single_video/%(title)s-%(id)s.%(ext)s"
+            self.ydl_opts["outtmpl"] ="video_data/single_video/%(title)s-%(id)s.%(ext)s"
         
+        self.ydl_opts["outtmpl"] = self.video_store_dir+self.ydl_opts["outtmpl"] 
+        self.ydl_opts["download_archive"] = self.video_store_dir + self.ydl_opts["download_archive"]
+      
     
     def run(self):
         print("worker:",self.wid)
+        print("downdir:",self.video_store_dir)
         try:
             self.app_store.setFileData(self.wid,"status","downloading") 
             self.download()
@@ -84,9 +89,11 @@ class downLoadWorker(multiprocessing.Process):
 
 class workerManager():
     worker_map = {}
-    def __init__(self,worker_group_name,app_store):
+    def __init__(self,worker_group_name,app_store,video_store_dir="./"):
         self.worker_group_name =worker_group_name
         self.app_store = app_store
+        self.video_store_dir=video_store_dir
+
 
     def get_all_worker(self):
         return self.worker_map
@@ -129,6 +136,6 @@ class workerManager():
         download_url = self.app_store.getElementFieldValue(wid,"url")
         if self.worker_is_runing(wid):
             return
-        w = downLoadWorker(wid, download_url,app_store,down_video_type)
+        w = downLoadWorker(wid, download_url,app_store,down_video_type,video_store_dir=self.video_store_dir)
         w.start()
         self.add_to_worker_map(wid,w)
