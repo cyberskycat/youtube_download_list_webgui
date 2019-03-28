@@ -149,7 +149,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description=description)       
     parser.add_argument('--datadir',help ="the directory store video data and app data ,default is app work dir", default="./")                  
     args = parser.parse_args()                                      
-    if not args.datadir.startswith("/"):
+    if not args.datadir.endswith("/"):
         args.datadir = args.datadir+"/"
         
     return args
