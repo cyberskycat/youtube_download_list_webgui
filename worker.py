@@ -32,7 +32,8 @@ global_ydl_opts = {
     'writeautomaticsub':'true',
     'subtitleslangs':['en','zh-Hans','zh-Hant'],
     "postprocessors":[{"key":"FFmpegEmbedSubtitle"}],
-    "outtmpl":"video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s"
+    "outtmpl":"video_data/%(playlist_uploader)s-%(playlist_title)s/%(title)s-%(id)s.%(ext)s",
+    "retries":30
 }
 
 def url2tid(url):
